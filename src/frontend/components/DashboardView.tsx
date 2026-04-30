@@ -10,7 +10,7 @@ import {
   Terminal,
   Settings,
 } from 'lucide-react';
-import type { SystemInfo } from '../../electron/preload';
+import type { SystemInfo } from '../types';
 
 interface DashboardViewProps {
   onNavigate?: (view: 'dashboard' | 'chat' | 'settings') => void;

@@ -68,7 +68,6 @@ function App() {
   const [isReady, setIsReady] = useState(false);
   const [version, setVersion] = useState('');
   const [hermesStatus, setHermesStatus] = useState<'loading' | 'online' | 'offline'>('loading');
-  const [onNavigate, setOnNavigate] = useState<((view: View) => void) | null>(null);
 
   // Navigation callback that children can use
   const navigateTo = useCallback((view: View) => {

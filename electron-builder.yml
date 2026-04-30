@@ -15,11 +15,20 @@ files:
   - "!**/*.map"
   - package.json
 
+asar: true
+asarUnpack:
+  - src/python/**
+
 extraResources:
   - from: src/python
     to: python
     filter:
       - "**/*"
+  - from: src/assets
+    to: assets
+    filter:
+      - "icon.png"
+      - "icon.ico"
 
 win:
   target:
@@ -29,17 +38,14 @@ win:
     - target: portable
       arch:
         - x64
-    - target: msi
-      arch:
-        - x64
   icon: src/assets/icon.ico
   artifactName: "${productName}-${version}-Setup.${ext}"
+  # Signing: set CSC_LINK and CSC_KEY_PASSWORD env vars
+  # Or add signDlls: true and provide certificate
+  signAndEditExecutable: true
 
 portable:
   artifactName: "${productName}-${version}-Portable.${ext}"
-
-msi:
-  artifactName: "${productName}-${version}.${ext}"
 
 nsis:
   oneClick: false
@@ -65,6 +71,8 @@ mac:
         - arm64
   icon: src/assets/icon.icns
   category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
 
 linux:
   target:
@@ -81,3 +89,4 @@ publish:
   provider: github
   owner: carly17s
   repo: hermes-windows
+  releaseType: release

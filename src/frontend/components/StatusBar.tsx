@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Cpu, MemoryStick, HardDrive, Wifi, Clock } from 'lucide-react';
-import type { SystemInfo } from '../../electron/preload';
+import type { SystemInfo } from '../types';
 
 interface StatusBarProps {
   hermesStatus: 'loading' | 'online' | 'offline';

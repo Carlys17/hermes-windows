@@ -43,7 +43,6 @@ if /i "%~1"=="--clean" set CLEAN=1
 if /i "%~1"=="--all" set BUILD_TYPE=all
 if /i "%~1"=="--portable" set BUILD_TYPE=portable
 if /i "%~1"=="--setup" set BUILD_TYPE=setup
-if /i "%~1"=="--msi" set BUILD_TYPE=msi
 if /i "%~1"=="--dev" set BUILD_TYPE=dev
 shift
 goto :parse_args
@@ -128,12 +127,6 @@ if "%BUILD_TYPE%"=="portable" (
     goto :build_done
 )
 
-if "%BUILD_TYPE%"=="msi" (
-    echo Building MSI...
-    call npm run build:win:msi
-    goto :build_done
-)
-
 REM Default: Setup.exe
 echo Building Setup.exe...
 call npm run build:win:setup
@@ -167,7 +160,6 @@ echo Usage:
 echo   build.bat              Build Setup.exe (default)
 echo   build.bat --all        Build all formats
 echo   build.bat --portable   Build portable .exe only
-echo   build.bat --msi        Build MSI installer
 echo   build.bat --dev        Run in dev mode
 echo   build.bat --clean      Clean and rebuild
 echo.
