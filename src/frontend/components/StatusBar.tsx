@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cpu, MemoryStick, HardDrive, Wifi, Clock } from 'lucide-react';
 import type { SystemInfo } from '../types';
+import { formatBytes } from '../utils';
 
 interface StatusBarProps {
   hermesStatus: 'loading' | 'online' | 'offline';
@@ -32,11 +33,6 @@ export function StatusBar({ hermesStatus, version }: StatusBarProps) {
     loading: 'Initializing...',
     online: 'Ready',
     offline: 'Disconnected',
-  };
-
-  const formatBytes = (bytes: number) => {
-    const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb.toFixed(1)} GB`;
   };
 
   const memUsage = sysInfo

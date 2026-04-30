@@ -16,11 +16,15 @@ import json
 from datetime import datetime
 
 
+# Defense-in-depth whitelist (matches Electron main.ts)
+# Removed: python, pip, git, node, npm, top — allow arbitrary code execution
 ALLOWED_COMMANDS = {
-    'hermes', 'hermes-agent', 'python', 'pip', 'git', 'node', 'npm',
+    'hermes', 'hermes-agent',
     'ls', 'cat', 'echo', 'pwd', 'whoami', 'uname', 'df', 'free',
-    'ps', 'top', 'head', 'tail', 'grep', 'find', 'wc',
+    'ps', 'head', 'tail', 'grep', 'find', 'wc',
 }
+
+DANGEROUS_CHARS = set(';&|`$(){}!<>\x00')
 
 
 def run_command(bin_name: str, args: list[str]) -> int:
@@ -75,10 +79,22 @@ def main():
 
     # Validate against whitelist
     base_name = os.path.basename(bin_name).replace('.exe', '').replace('.cmd', '').replace('.bat', '')
+
+    # Defense-in-depth: reject path separators (prevent whitelist bypass)
+    if '/' in bin_name or '\\' in bin_name:
+        print(f'Path separators not allowed in command: {bin_name}')
+        return 1
+
     if base_name not in ALLOWED_COMMANDS:
         print(f'Command not allowed: {bin_name}')
         print(f'Allowed: {", ".join(sorted(ALLOWED_COMMANDS))}')
         return 1
+
+    # Defense-in-depth: reject dangerous characters in args
+    for arg in args:
+        if any(c in DANGEROUS_CHARS for c in arg):
+            print(f'Dangerous character in argument: {arg[:50]}')
+            return 1
 
     return run_command(bin_name, args)
 

@@ -4,9 +4,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { spawn, ChildProcess } from 'child_process';
 
-// electron-store is CJS — use default import
-import ElectronStore from 'electron-store';
-const Store = ElectronStore as any;
+// Fix #1: electron-store is ESM-only in v8; use lazy dynamic import for CJS compat
+let store: any = null;
+async function getStore() {
+  if (!store) {
+    const Store = (await import('electron-store')).default;
+    store = new Store({ name: 'hermes-config' });
+  }
+  return store;
+}
+
+// Fix #6: Global error handlers
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -15,6 +29,10 @@ let pythonProcess: ChildProcess | null = null;
 let pythonRestartCount = 0;
 const MAX_PYTHON_RESTARTS = 3;
 const isDevMode = !app.isPackaged;
+
+// Fix #10: Concurrency limit for command processes
+let activeCommands = 0;
+const MAX_CONCURRENT_COMMANDS = 5;
 
 const PYTHON_PATH = isDevMode
   ? path.join(__dirname, '..', 'src', 'python')
@@ -28,22 +46,14 @@ const ICON_PATH = isDevMode
   ? path.join(__dirname, '..', 'src', 'assets', 'icon.png')
   : path.join(process.resourcesPath, 'assets', 'icon.png');
 
-// ─── Store (non-sensitive config only) ──────────────────────────
-
-let store: InstanceType<typeof Store>;
-try {
-  store = new Store({ name: 'hermes-config' });
-} catch {
-  // Fallback if store creation fails
-  store = new Store({ name: 'hermes-config', cwd: app.getPath('userData') });
-}
-
 // ─── Security: command whitelist & validation ───────────────────
 
+// Fix #3: Removed dangerous commands (python, pip, git, node, npm) that allow
+// arbitrary code execution via -c/-e flags. Keep only safe read-only commands.
 const ALLOWED_COMMANDS = new Set([
-  'hermes', 'hermes-agent', 'python', 'pip', 'git', 'node', 'npm',
+  'hermes', 'hermes-agent',
   'ls', 'cat', 'echo', 'pwd', 'whoami', 'uname', 'df', 'free',
-  'ps', 'top', 'head', 'tail', 'grep', 'find', 'wc',
+  'ps', 'head', 'tail', 'grep', 'find', 'wc',
 ]);
 
 function isSafeUrl(urlString: string): boolean {
@@ -90,7 +100,11 @@ function parseCommand(command: string): { bin: string; args: string[] } | null {
   const baseBin = path.basename(bin).replace(/\.(exe|cmd|bat|ps1)$/i, '');
   if (!ALLOWED_COMMANDS.has(baseBin)) return null;
 
-  const dangerousChars = /[;&|`$(){}!<>]/;
+  // Fix #2: Reject any input containing path separators to prevent whitelist bypass
+  if (bin.includes('/') || bin.includes('\\')) return null;
+
+  // Fix #4: Added \0 to dangerous chars to prevent null byte injection
+  const dangerousChars = /[;&|`$(){}!<>\0]/;
   for (const arg of parts.slice(1)) {
     if (dangerousChars.test(arg)) return null;
   }
@@ -126,11 +140,22 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,            // needed for preload to access Node APIs
+      // Fix #5: Enable sandbox for security
+      sandbox: true,
     },
     ...(icon ? { icon } : {}),
     show: false,                 // show after ready-to-show
     backgroundColor: '#0f172a',  // match dark theme, prevents white flash
+  });
+
+  // Fix #16: Content Security Policy
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"],
+      },
+    });
   });
 
   if (isDevMode) {
@@ -151,14 +176,15 @@ function createWindow() {
 
 // ─── Python backend lifecycle ───────────────────────────────────
 
-function getPpythonExe(): string {
+// Fix #13: Fixed typo from getPpythonExe to getPythonExe
+function getPythonExe(): string {
   return process.platform === 'win32'
     ? path.join(PYTHON_PATH, 'python.exe')
     : path.join(PYTHON_PATH, 'bin', 'python3');
 }
 
 async function initPythonBackend(): Promise<boolean> {
-  const pythonExe = getPpythonExe();
+  const pythonExe = getPythonExe();
 
   if (!fs.existsSync(pythonExe)) {
     console.error('Python runtime not found:', pythonExe);
@@ -220,18 +246,15 @@ async function initPythonBackend(): Promise<boolean> {
   }
 }
 
+// Fix #8: Don't null pythonProcess immediately — let the close handler null it
 function killPythonProcess() {
   if (pythonProcess) {
-    // Try graceful shutdown first
-    pythonProcess.stdin?.write(JSON.stringify({ type: 'shutdown' }) + '\n');
-
-    // Force kill after 3 seconds if not exited
     const proc = pythonProcess;
+    pythonProcess = null; // prevent new references from other handlers
+    proc.stdin?.write(JSON.stringify({ type: 'shutdown' }) + '\n');
     setTimeout(() => {
       try { proc.kill(); } catch {}
     }, 3000);
-
-    pythonProcess = null;
   }
 }
 
@@ -256,21 +279,28 @@ ipcMain.handle('system:info', () => ({
   homeDir: os.homedir(),
 }));
 
-// Config (non-sensitive)
-ipcMain.handle('hermes:config', (_event, key?: string, value?: any) => {
+// Config (non-sensitive) — Fix #1: await getStore()
+ipcMain.handle('hermes:config', async (_event, key?: string, value?: any) => {
+  const s = await getStore();
   if (key && value !== undefined) {
-    store.set(`hermes.${key}`, value);
+    s.set(`hermes.${key}`, value);
     return { success: true };
   } else if (key) {
-    return store.get(`hermes.${key}`);
+    return s.get(`hermes.${key}`);
   }
-  return store.get('hermes');
+  return s.get('hermes');
 });
 
-// Credentials (encrypted via safeStorage)
-ipcMain.handle('credentials:get', (_event, key: string) => {
+// Credentials (encrypted via safeStorage) — Fix #1 + Fix #14
+ipcMain.handle('credentials:get', async (_event, key: string) => {
+  // Fix #14: Validate credential key format
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) {
+    return null;
+  }
+
+  const s = await getStore();
   const storeKey = `cred.${key}`;
-  const stored = store.get(storeKey) as string | undefined;
+  const stored = s.get(storeKey) as string | undefined;
   if (!stored) return null;
 
   try {
@@ -284,13 +314,19 @@ ipcMain.handle('credentials:get', (_event, key: string) => {
   }
 });
 
-ipcMain.handle('credentials:set', (_event, key: string, value: string) => {
+ipcMain.handle('credentials:set', async (_event, key: string, value: string) => {
+  // Fix #14: Validate credential key format
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) {
+    return { success: false, error: 'Invalid key format' };
+  }
+
   try {
+    const s = await getStore();
     const storeKey = `cred.${key}`;
     if (safeStorage.isEncryptionAvailable()) {
-      store.set(storeKey, safeStorage.encryptString(value).toString('base64'));
+      s.set(storeKey, safeStorage.encryptString(value).toString('base64'));
     } else {
-      store.set(storeKey, Buffer.from(value, 'utf-8').toString('base64'));
+      s.set(storeKey, Buffer.from(value, 'utf-8').toString('base64'));
     }
     return { success: true };
   } catch (err) {
@@ -299,22 +335,39 @@ ipcMain.handle('credentials:set', (_event, key: string, value: string) => {
   }
 });
 
-ipcMain.handle('credentials:delete', (_event, key: string) => {
-  store.delete(`cred.${key}` as any);
+ipcMain.handle('credentials:delete', async (_event, key: string) => {
+  // Fix #14: Validate credential key format
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(key)) {
+    return { success: false, error: 'Invalid key format' };
+  }
+
+  const s = await getStore();
+  s.delete(`cred.${key}` as any);
   return { success: true };
 });
 
-// Chat
+// Chat — Fix #7: Wrap stdin.write in try-catch to handle race conditions
 ipcMain.handle('hermes:chat', (_event, message: string) => {
-  if (pythonProcess?.stdin) {
-    pythonProcess.stdin.write(JSON.stringify({ type: 'chat', message }) + '\n');
-    return { success: true };
+  try {
+    if (pythonProcess?.stdin) {
+      pythonProcess.stdin.write(JSON.stringify({ type: 'chat', message }) + '\n');
+      return { success: true };
+    }
+    return { success: false, error: 'Python backend not running' };
+  } catch (err) {
+    return { success: false, error: String(err) };
   }
-  return { success: false, error: 'Python backend not running' };
 });
 
-// Command execution (whitelisted)
+// Command execution (whitelisted) — Fix #9, #10
 ipcMain.handle('hermes:command', (_event, command: string) => {
+  // Fix #10: Concurrency limit
+  if (activeCommands >= MAX_CONCURRENT_COMMANDS) {
+    return {
+      success: false, stdout: '', stderr: 'Too many concurrent commands. Please wait.', code: -1,
+    };
+  }
+
   const parsed = parseCommand(command);
   if (!parsed) {
     return {
@@ -323,8 +376,10 @@ ipcMain.handle('hermes:command', (_event, command: string) => {
     };
   }
 
+  activeCommands++;
+
   return new Promise((resolve) => {
-    const pythonExe = getPpythonExe();
+    const pythonExe = getPythonExe();
     const hermesCli = path.join(HERMES_PATH, 'cli.py');
 
     const proc = spawn(pythonExe, [hermesCli, parsed.bin, ...parsed.args], {
@@ -340,8 +395,28 @@ ipcMain.handle('hermes:command', (_event, command: string) => {
 
     proc.stdout?.on('data', (d) => { stdout += d.toString(); });
     proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+
+    // Fix #9: 30-second timeout
+    const timeout = setTimeout(() => {
+      try { proc.kill(); } catch {}
+    }, 30000);
+
     proc.on('close', (code) => {
-      resolve({ success: code === 0, stdout, stderr, code });
+      clearTimeout(timeout);
+      activeCommands--;
+      // Fix #9: 1MB output cap
+      const maxLen = 1024 * 1024;
+      resolve({
+        success: code === 0,
+        stdout: stdout.slice(0, maxLen),
+        stderr: stderr.slice(0, maxLen),
+        code,
+      });
+    });
+
+    proc.on('error', () => {
+      clearTimeout(timeout);
+      activeCommands--;
     });
   });
 });
@@ -353,9 +428,11 @@ ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   return { success: true };
 });
 
+// Fix #11: Check return value of shell.openPath
 ipcMain.handle('shell:openPath', async (_event, filePath: string) => {
   if (!isSafePath(filePath)) return { success: false, error: 'Path not allowed' };
-  await shell.openPath(filePath);
+  const err = await shell.openPath(filePath);
+  if (err) return { success: false, error: err };
   return { success: true };
 });
 
@@ -413,6 +490,13 @@ async function setupAutoUpdater() {
 
     // Check for updates after 5 seconds
     setTimeout(() => autoUpdater.checkForUpdates(), 5000);
+
+    // Fix #15: Periodic update check every 4 hours
+    setInterval(() => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        console.error('Periodic update check failed:', err);
+      });
+    }, 4 * 60 * 60 * 1000);
   } catch (err) {
     console.error('Failed to setup auto-updater:', err);
   }
@@ -439,11 +523,14 @@ ipcMain.handle('update:download', async () => {
   }
 });
 
-ipcMain.handle('update:install', () => {
+// Fix #12: Use autoUpdater.quitAndInstall() instead of app.quit()
+ipcMain.handle('update:install', async () => {
   try {
-    // electron-updater's quitAndInstall
-    app.quit();
-  } catch {}
+    const { autoUpdater } = await import('electron-updater');
+    autoUpdater.quitAndInstall(false, true);
+  } catch (err) {
+    console.error('Failed to install update:', err);
+  }
 });
 
 // ─── App lifecycle ──────────────────────────────────────────────

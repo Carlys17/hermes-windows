@@ -25,9 +25,7 @@
   },
   "dependencies": {
     "electron-store": "^8.1.0",
-    "electron-updater": "^6.1.0",
-    "node-pty": "^1.0.0",
-    "ws": "^8.16.0"
+    "electron-updater": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -38,7 +36,7 @@
     "concurrently": "^8.2.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
-    "lucide-react": "^0.344.0",
+    "lucide-react": "^1.14.0",
     "postcss": "^8.4.35",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

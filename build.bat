@@ -148,7 +148,7 @@ echo.
 if exist release (
     echo Output directory: release\
     echo.
-    for %%f in (release\*.exe release\*.msi) do (
+    for %%f in (release\*.exe) do (
         set size=%%~zf
         set /a sizeMB=!size! / 1048576
         echo   - %%~nxf (!sizeMB! MB)

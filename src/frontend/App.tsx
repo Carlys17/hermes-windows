@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, ReactNode, ErrorInfo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { SettingsView } from './components/SettingsView';
@@ -43,7 +43,7 @@ class ErrorBoundary extends React.Component<
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">Something went wrong</h2>
             <p className="text-slate-400 mb-4 text-sm">
-              {this.state.error?.message || 'An unexpected error occurred'}
+              {this.state.error?.message ?? 'An unexpected error occurred'}
             </p>
             <button
               onClick={() => {
@@ -75,7 +75,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let cleanupMessage: (() => void) | null = null;
     let cleanupExit: (() => void) | null = null;
 
     const init = async () => {
@@ -87,11 +86,7 @@ function App() {
         const hermesHome = await window.electronAPI.getHermesHome();
         console.log('Hermes home:', hermesHome);
 
-        // Register Python message listeners (returns cleanup functions)
-        cleanupMessage = window.electronAPI.onPythonMessage((data) => {
-          console.log('Python message:', data);
-        });
-
+        // Listen for Python exit events
         cleanupExit = window.electronAPI.onPythonExit((data) => {
           console.log('Python exited:', data);
           setHermesStatus('offline');
@@ -111,60 +106,56 @@ function App() {
     init();
 
     return () => {
-      // Proper per-listener cleanup (not removeAllListeners)
-      cleanupMessage?.();
       cleanupExit?.();
     };
   }, []);
 
-  const renderView = () => {
+  const viewElement = useMemo(() => {
     switch (currentView) {
       case 'dashboard':
-        return <DashboardView onNavigate={navigateTo} />;
+        return <DashboardView onNavigate={navigateTo} hermesStatus={hermesStatus} />;
       case 'chat':
-        return <ChatView />;
+        return <ChatView hermesStatus={hermesStatus} />;
       case 'settings':
         return <SettingsView />;
       default:
-        return <DashboardView onNavigate={navigateTo} />;
+        return <DashboardView onNavigate={navigateTo} hermesStatus={hermesStatus} />;
     }
-  };
-
-  if (!isReady) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-900">
-        <div className="text-center">
-          <div className="animate-pulse-glow w-16 h-16 rounded-full bg-hermes-500 mx-auto mb-4 flex items-center justify-center">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-white mb-2">Hermes Agent</h2>
-          <p className="text-slate-400">Initializing...</p>
-        </div>
-      </div>
-    );
-  }
+  }, [currentView, navigateTo, hermesStatus]);
 
   return (
     <ErrorBoundary>
-      <div className="flex flex-col h-screen bg-slate-900">
-        <Titlebar version={version} />
-
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar
-            currentView={currentView}
-            onViewChange={setCurrentView}
-            hermesStatus={hermesStatus}
-          />
-
-          <main className="flex-1 overflow-hidden">
-            {renderView()}
-          </main>
+      {!isReady ? (
+        <div className="flex items-center justify-center h-screen bg-slate-900">
+          <div className="text-center">
+            <div className="animate-pulse-glow w-16 h-16 rounded-full bg-hermes-500 mx-auto mb-4 flex items-center justify-center">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">Hermes Agent</h2>
+            <p className="text-slate-400">Initializing...</p>
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-col h-screen bg-slate-900">
+          <Titlebar version={version} />
 
-        <StatusBar hermesStatus={hermesStatus} version={version} />
-      </div>
+          <div className="flex flex-1 overflow-hidden">
+            <Sidebar
+              currentView={currentView}
+              onViewChange={setCurrentView}
+              hermesStatus={hermesStatus}
+            />
+
+            <main className="flex-1 overflow-hidden">
+              {viewElement}
+            </main>
+          </div>
+
+          <StatusBar hermesStatus={hermesStatus} version={version} />
+        </div>
+      )}
     </ErrorBoundary>
   );
 }

@@ -11,12 +11,14 @@ import {
   Settings,
 } from 'lucide-react';
 import type { SystemInfo } from '../types';
+import { formatBytes } from '../utils';
 
 interface DashboardViewProps {
   onNavigate?: (view: 'dashboard' | 'chat' | 'settings') => void;
+  hermesStatus?: 'loading' | 'online' | 'offline';
 }
 
-export function DashboardView({ onNavigate }: DashboardViewProps) {
+export function DashboardView({ onNavigate, hermesStatus = 'loading' }: DashboardViewProps) {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [hermesHome, setHermesHome] = useState('');
   const [uptimeStr, setUptimeStr] = useState('0h 0m');
@@ -53,22 +55,35 @@ export function DashboardView({ onNavigate }: DashboardViewProps) {
     }
   }, [systemInfo]);
 
-  const formatBytes = (bytes: number) => {
-    const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb.toFixed(1)} GB`;
-  };
-
   const memPercent = systemInfo
     ? Math.round(((systemInfo.totalMemory - systemInfo.freeMemory) / systemInfo.totalMemory) * 100)
     : 0;
 
+  const statusLabels: Record<string, string> = {
+    loading: 'Initializing',
+    online: 'Online',
+    offline: 'Offline',
+  };
+
+  const statusColors: Record<string, string> = {
+    loading: 'text-yellow-400',
+    online: 'text-green-400',
+    offline: 'text-red-400',
+  };
+
+  const statusBgColors: Record<string, string> = {
+    loading: 'bg-yellow-400/10',
+    online: 'bg-green-400/10',
+    offline: 'bg-red-400/10',
+  };
+
   const stats = [
     {
       label: 'Status',
-      value: 'Online',
+      value: statusLabels[hermesStatus] ?? 'Unknown',
       icon: Activity,
-      color: 'text-green-400',
-      bgColor: 'bg-green-400/10',
+      color: statusColors[hermesStatus] ?? 'text-slate-400',
+      bgColor: statusBgColors[hermesStatus] ?? 'bg-slate-400/10',
     },
     {
       label: 'Platform',

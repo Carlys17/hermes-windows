@@ -1,12 +1,11 @@
 # Hermes Agent Desktop - Build Script (PowerShell)
-# Usage: .\build.ps1 [-Clean] [-All] [-Portable] [-Setup] [-MSI] [-Dev]
+# Usage: .\build.ps1 [-Clean] [-All] [-Portable] [-Setup] [-Dev]
 
 param(
     [switch]$Clean,
     [switch]$All,
     [switch]$Portable,
     [switch]$Setup,
-    [switch]$MSI,
     [switch]$Dev
 )
 
@@ -104,9 +103,6 @@ if ($All) {
 } elseif ($Portable) {
     Write-Host "Building portable..." -ForegroundColor Yellow
     npm run build:win:portable
-} elseif ($MSI) {
-    Write-Host "Building MSI..." -ForegroundColor Yellow
-    npm run build:win:msi
 } else {
     Write-Host "Building Setup.exe..." -ForegroundColor Yellow
     npm run build:win:setup
@@ -128,7 +124,7 @@ Write-Host ""
 $outputDir = Join-Path $PSScriptRoot "release"
 if (Test-Path $outputDir) {
     Write-Host "Output directory: $outputDir" -ForegroundColor Cyan
-    Get-ChildItem -Path $outputDir -Include "*.exe", "*.msi" -Recurse | ForEach-Object {
+    Get-ChildItem -Path $outputDir -Include "*.exe" -Recurse | ForEach-Object {
         $sizeMB = [math]::Round($_.Length / 1MB, 2)
         Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor White
     }
@@ -139,7 +135,6 @@ Write-Host "Usage:" -ForegroundColor Yellow
 Write-Host "  .\build.ps1              # Build Setup.exe (default)"
 Write-Host "  .\build.ps1 -All         # Build all formats"
 Write-Host "  .\build.ps1 -Portable    # Build portable .exe only"
-Write-Host "  .\build.ps1 -MSI         # Build MSI installer"
 Write-Host "  .\build.ps1 -Dev         # Run in dev mode"
 Write-Host "  .\build.ps1 -Clean       # Clean and rebuild"
 Write-Host ""

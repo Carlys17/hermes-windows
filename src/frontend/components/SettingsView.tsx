@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Save,
   RefreshCw,
@@ -48,15 +48,19 @@ export function SettingsView() {
   const [isSaving, setIsSaving] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [clampWarnings, setClampWarnings] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadConfig();
   }, []);
 
   const loadConfig = async () => {
+    setIsLoading(true);
+    setLoadError(null);
     try {
       const hermesConfig = await window.electronAPI.getConfig();
-      setConfig(hermesConfig as Config || {
+      setConfig(hermesConfig as Config ?? {
         model: { default: 'anthropic/claude-sonnet-4', provider: 'anthropic' },
         agent: { max_turns: 90 },
         terminal: { timeout: 180 },
@@ -72,13 +76,14 @@ export function SettingsView() {
       ]);
 
       setApiKeys({
-        openrouter: or || '',
-        anthropic: ant || '',
-        dashscope: ds || '',
-        xiaomi: xm || '',
+        openrouter: or ?? '',
+        anthropic: ant ?? '',
+        dashscope: ds ?? '',
+        xiaomi: xm ?? '',
       });
     } catch (error) {
       console.error('Failed to load config:', error);
+      setLoadError(error instanceof Error ? error.message : 'Failed to load configuration');
     } finally {
       setIsLoading(false);
     }
@@ -97,12 +102,23 @@ export function SettingsView() {
       await window.electronAPI.setConfig('terminal', config.terminal);
       await window.electronAPI.setConfig('display', config.display);
 
-      // Save credentials (encrypted)
-      const credOps = [];
-      if (apiKeys.openrouter) credOps.push(window.electronAPI.setCredential('openrouter_api_key', apiKeys.openrouter));
-      if (apiKeys.anthropic) credOps.push(window.electronAPI.setCredential('anthropic_api_key', apiKeys.anthropic));
-      if (apiKeys.dashscope) credOps.push(window.electronAPI.setCredential('dashscope_api_key', apiKeys.dashscope));
-      if (apiKeys.xiaomi) credOps.push(window.electronAPI.setCredential('xiaomi_api_key', apiKeys.xiaomi));
+      // Save or delete credentials based on whether key is empty
+      const credEntries: [keyof ApiKeys, string, string][] = [
+        ['openrouter', 'openrouter_api_key', apiKeys.openrouter],
+        ['anthropic', 'anthropic_api_key', apiKeys.anthropic],
+        ['dashscope', 'dashscope_api_key', apiKeys.dashscope],
+        ['xiaomi', 'xiaomi_api_key', apiKeys.xiaomi],
+      ];
+
+      const credOps = credEntries.map(([, credKey, value]) => {
+        if (value) {
+          return window.electronAPI.setCredential(credKey, value);
+        } else {
+          // Empty key = delete the credential
+          return window.electronAPI.deleteCredential(credKey);
+        }
+      });
+
       await Promise.all(credOps);
 
       setSaveStatus('success');
@@ -127,10 +143,50 @@ export function SettingsView() {
     return parsed;
   };
 
+  const handleNumericChange = (
+    field: string,
+    value: string,
+    fallback: number,
+    min: number,
+    max: number,
+    onChange: (parsed: number) => void
+  ) => {
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+      onChange(fallback);
+      setClampWarnings(prev => ({ ...prev, [field]: false }));
+      return;
+    }
+    const clamped = safeParseInt(value, fallback, min, max);
+    onChange(clamped);
+    setClampWarnings(prev => ({ ...prev, [field]: parsed !== clamped }));
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <RefreshCw className="w-6 h-6 animate-spin text-hermes-400" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center max-w-md p-6">
+          <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-red-400" />
+          </div>
+          <h2 className="text-xl font-semibold text-white mb-2">Failed to load settings</h2>
+          <p className="text-slate-400 mb-4 text-sm">{loadError}</p>
+          <button
+            onClick={loadConfig}
+            className="px-4 py-2 bg-hermes-500 rounded-lg text-white hover:bg-hermes-600 transition-all flex items-center gap-2 mx-auto"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -146,7 +202,7 @@ export function SettingsView() {
               Default Model
             </label>
             <select
-              value={config?.model.default || ''}
+              value={config?.model.default ?? ''}
               onChange={(e) => setConfig(prev => prev ? {
                 ...prev,
                 model: { ...prev.model, default: e.target.value }
@@ -182,7 +238,7 @@ export function SettingsView() {
               Provider
             </label>
             <select
-              value={config?.model.provider || ''}
+              value={config?.model.provider ?? ''}
               onChange={(e) => setConfig(prev => prev ? {
                 ...prev,
                 model: { ...prev.model, provider: e.target.value }
@@ -212,15 +268,30 @@ export function SettingsView() {
             </label>
             <input
               type="number"
-              value={config?.agent.max_turns || 90}
-              onChange={(e) => setConfig(prev => prev ? {
-                ...prev,
-                agent: { ...prev.agent, max_turns: safeParseInt(e.target.value, 90, 1, 500) }
-              } : prev)}
+              value={config?.agent.max_turns ?? 90}
+              onChange={(e) => handleNumericChange(
+                'max_turns',
+                e.target.value,
+                90,
+                1,
+                500,
+                (parsed) => setConfig(prev => prev ? {
+                  ...prev,
+                  agent: { ...prev.agent, max_turns: parsed }
+                } : prev)
+              )}
               min={1}
               max={500}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
             />
+            {clampWarnings.max_turns && (
+              <p className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                Value clamped to allowed range (1–500)
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -228,15 +299,30 @@ export function SettingsView() {
             </label>
             <input
               type="number"
-              value={config?.terminal.timeout || 180}
-              onChange={(e) => setConfig(prev => prev ? {
-                ...prev,
-                terminal: { ...prev.terminal, timeout: safeParseInt(e.target.value, 180, 10, 3600) }
-              } : prev)}
+              value={config?.terminal.timeout ?? 180}
+              onChange={(e) => handleNumericChange(
+                'timeout',
+                e.target.value,
+                180,
+                10,
+                3600,
+                (parsed) => setConfig(prev => prev ? {
+                  ...prev,
+                  terminal: { ...prev.terminal, timeout: parsed }
+                } : prev)
+              )}
               min={10}
               max={3600}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
             />
+            {clampWarnings.timeout && (
+              <p className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                Value clamped to allowed range (10–3600)
+              </p>
+            )}
           </div>
         </div>
       ),
@@ -268,6 +354,7 @@ export function SettingsView() {
                   onClick={() => setShowApiKeys(!showApiKeys)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
                   type="button"
+                  aria-label={showApiKeys ? 'Hide API keys' : 'Show API keys'}
                 >
                   {showApiKeys ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -289,7 +376,7 @@ export function SettingsView() {
             Theme
           </label>
           <select
-            value={config?.display.skin || 'default'}
+            value={config?.display.skin ?? 'default'}
             onChange={(e) => setConfig(prev => prev ? {
               ...prev,
               display: { ...prev.display, skin: e.target.value }

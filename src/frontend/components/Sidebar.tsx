@@ -1,10 +1,8 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Settings, 
-  Terminal,
-  Brain,
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Settings,
   Zap
 } from 'lucide-react';
 
@@ -36,46 +34,31 @@ export function Sidebar({ currentView, onViewChange, hermesStatus }: SidebarProp
       </div>
 
       {/* Menu items */}
-      {menuItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = currentView === item.id;
-        
-        return (
-          <button
-            key={item.id}
-            onClick={() => onViewChange(item.id as any)}
-            className={`
-              w-12 h-12 rounded-lg flex items-center justify-center transition-all
-              ${isActive 
-                ? 'bg-hermes-500 text-white shadow-lg shadow-hermes-500/30' 
-                : 'text-slate-400 hover:bg-slate-700 hover:text-white'
-              }
-            `}
-            title={item.label}
-          >
-            <Icon className="w-5 h-5" />
-          </button>
-        );
-      })}
+      <nav role="navigation" aria-label="Main navigation">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = currentView === item.id;
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Quick actions */}
-      <div className="flex flex-col gap-2">
-        <button
-          className="w-12 h-12 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:text-white transition-all"
-          title="Terminal"
-        >
-          <Terminal className="w-5 h-5" />
-        </button>
-        <button
-          className="w-12 h-12 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:text-white transition-all"
-          title="AI Assistant"
-        >
-          <Brain className="w-5 h-5" />
-        </button>
-      </div>
+          return (
+            <button
+              key={item.id}
+              onClick={() => onViewChange(item.id as any)}
+              className={`
+                w-12 h-12 rounded-lg flex items-center justify-center transition-all mb-1
+                ${isActive
+                  ? 'bg-hermes-500 text-white shadow-lg shadow-hermes-500/30'
+                  : 'text-slate-400 hover:bg-slate-700 hover:text-white'
+                }
+              `}
+              title={item.label}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

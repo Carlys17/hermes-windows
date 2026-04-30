@@ -23,6 +23,7 @@ export function Titlebar({ version }: TitlebarProps) {
           className="w-8 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
           onClick={() => window.electronAPI.minimizeWindow()}
           title="Minimize"
+          aria-label="Minimize window"
         >
           <Minus className="w-3 h-3" />
         </button>
@@ -30,6 +31,7 @@ export function Titlebar({ version }: TitlebarProps) {
           className="w-8 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
           onClick={() => window.electronAPI.maximizeWindow()}
           title="Maximize"
+          aria-label="Maximize window"
         >
           <Square className="w-3 h-3" />
         </button>
@@ -37,6 +39,7 @@ export function Titlebar({ version }: TitlebarProps) {
           className="w-8 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-red-500 hover:text-white transition-colors"
           onClick={() => window.electronAPI.closeWindow()}
           title="Close"
+          aria-label="Close window"
         >
           <X className="w-3 h-3" />
         </button>
