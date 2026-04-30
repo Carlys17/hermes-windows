@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Save, 
-  RefreshCw, 
-  Eye, 
-  EyeOff, 
-  Check, 
+import {
+  Save,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Check,
   X,
   Settings as SettingsIcon,
   Key,
-  Globe,
   Terminal,
-  Bell,
+  Palette,
   Shield,
-  Palette
 } from 'lucide-react';
 
 interface Config {
@@ -31,11 +29,24 @@ interface Config {
   };
 }
 
+interface ApiKeys {
+  openrouter: string;
+  anthropic: string;
+  dashscope: string;
+  xiaomi: string;
+}
+
 export function SettingsView() {
   const [config, setConfig] = useState<Config | null>(null);
+  const [apiKeys, setApiKeys] = useState<ApiKeys>({
+    openrouter: '',
+    anthropic: '',
+    dashscope: '',
+    xiaomi: '',
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [showApiKeys, setShowApiKeys] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
@@ -51,6 +62,21 @@ export function SettingsView() {
         terminal: { timeout: 180 },
         display: { skin: 'default' },
       });
+
+      // Load encrypted credentials
+      const [or, ant, ds, xm] = await Promise.all([
+        window.electronAPI.getCredential('openrouter_api_key'),
+        window.electronAPI.getCredential('anthropic_api_key'),
+        window.electronAPI.getCredential('dashscope_api_key'),
+        window.electronAPI.getCredential('xiaomi_api_key'),
+      ]);
+
+      setApiKeys({
+        openrouter: or || '',
+        anthropic: ant || '',
+        dashscope: ds || '',
+        xiaomi: xm || '',
+      });
     } catch (error) {
       console.error('Failed to load config:', error);
     } finally {
@@ -60,16 +86,25 @@ export function SettingsView() {
 
   const handleSave = async () => {
     if (!config) return;
-    
+
     setIsSaving(true);
     setSaveStatus('idle');
 
     try {
+      // Save config (non-sensitive)
       await window.electronAPI.setConfig('model', config.model);
       await window.electronAPI.setConfig('agent', config.agent);
       await window.electronAPI.setConfig('terminal', config.terminal);
       await window.electronAPI.setConfig('display', config.display);
-      
+
+      // Save credentials (encrypted)
+      const credOps = [];
+      if (apiKeys.openrouter) credOps.push(window.electronAPI.setCredential('openrouter_api_key', apiKeys.openrouter));
+      if (apiKeys.anthropic) credOps.push(window.electronAPI.setCredential('anthropic_api_key', apiKeys.anthropic));
+      if (apiKeys.dashscope) credOps.push(window.electronAPI.setCredential('dashscope_api_key', apiKeys.dashscope));
+      if (apiKeys.xiaomi) credOps.push(window.electronAPI.setCredential('xiaomi_api_key', apiKeys.xiaomi));
+      await Promise.all(credOps);
+
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error) {
@@ -82,6 +117,14 @@ export function SettingsView() {
 
   const handleReset = () => {
     loadConfig();
+  };
+
+  const safeParseInt = (value: string, fallback: number, min?: number, max?: number): number => {
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) return fallback;
+    if (min !== undefined && parsed < min) return min;
+    if (max !== undefined && parsed > max) return max;
+    return parsed;
   };
 
   if (isLoading) {
@@ -172,8 +215,10 @@ export function SettingsView() {
               value={config?.agent.max_turns || 90}
               onChange={(e) => setConfig(prev => prev ? {
                 ...prev,
-                agent: { ...prev.agent, max_turns: parseInt(e.target.value) }
+                agent: { ...prev.agent, max_turns: safeParseInt(e.target.value, 90, 1, 500) }
               } : prev)}
+              min={1}
+              max={500}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
             />
           </div>
@@ -186,8 +231,10 @@ export function SettingsView() {
               value={config?.terminal.timeout || 180}
               onChange={(e) => setConfig(prev => prev ? {
                 ...prev,
-                terminal: { ...prev.terminal, timeout: parseInt(e.target.value) }
+                terminal: { ...prev.terminal, timeout: safeParseInt(e.target.value, 180, 10, 3600) }
               } : prev)}
+              min={10}
+              max={3600}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
             />
           </div>
@@ -199,87 +246,37 @@ export function SettingsView() {
       icon: Key,
       content: (
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              OpenRouter API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                placeholder="sk-or-..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          {[
+            { key: 'openrouter' as keyof ApiKeys, label: 'OpenRouter API Key', placeholder: 'sk-or-...' },
+            { key: 'anthropic' as keyof ApiKeys, label: 'Anthropic API Key', placeholder: 'sk-ant-...' },
+            { key: 'dashscope' as keyof ApiKeys, label: 'Alibaba DashScope API Key', placeholder: 'sk-sp-...', hint: 'For Qwen models (qwen3.5-plus, qwen3.5-flash, etc.) via Coding Plan' },
+            { key: 'xiaomi' as keyof ApiKeys, label: 'Xiaomi MiMo API Key', placeholder: 'tp-...', hint: 'For MiMo models (mimo-v2.5-pro, etc.) via Token Plan' },
+          ].map(({ key, label, placeholder, hint }) => (
+            <div key={key}>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                {label}
+              </label>
+              <div className="relative">
+                <input
+                  type={showApiKeys ? 'text' : 'password'}
+                  value={apiKeys[key]}
+                  onChange={(e) => setApiKeys(prev => ({ ...prev, [key]: e.target.value }))}
+                  placeholder={placeholder}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
+                />
+                <button
+                  onClick={() => setShowApiKeys(!showApiKeys)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+                  type="button"
+                >
+                  {showApiKeys ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {hint && (
+                <p className="text-xs text-slate-500 mt-1">{hint}</p>
+              )}
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Anthropic API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                placeholder="sk-ant-..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Alibaba DashScope API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                placeholder="sk-sp-..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              For Qwen models (qwen3.5-plus, qwen3.5-flash, etc.) via Coding Plan
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Xiaomi MiMo API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                placeholder="tp-..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
-              />
-              <button
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              For MiMo models (mimo-v2.5-pro, etc.) via Token Plan
-            </p>
-          </div>
-          <p className="text-xs text-slate-500">
-            API keys are stored securely in your system keychain.
-          </p>
+          ))}
         </div>
       ),
     },
@@ -372,8 +369,8 @@ export function SettingsView() {
           <div>
             <h3 className="text-sm font-medium text-white mb-1">Security Note</h3>
             <p className="text-sm text-slate-400">
-              API keys and sensitive configuration are stored securely using your system's 
-              native keychain. They are never stored in plain text.
+              API keys are encrypted using your system's native safeStorage (DPAPI on Windows, Keychain on macOS).
+              Non-sensitive settings are stored in a local JSON config file.
             </p>
           </div>
         </div>

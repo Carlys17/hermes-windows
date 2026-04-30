@@ -1,12 +1,6 @@
-import React from 'react';
-import { 
-  Activity, 
-  Cpu, 
-  MemoryStick, 
-  HardDrive,
-  Wifi,
-  Clock
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Cpu, MemoryStick, HardDrive, Wifi, Clock } from 'lucide-react';
+import type { SystemInfo } from '../../electron/preload';
 
 interface StatusBarProps {
   hermesStatus: 'loading' | 'online' | 'offline';
@@ -14,6 +8,20 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ hermesStatus, version }: StatusBarProps) {
+  const [time, setTime] = useState(new Date());
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
+
+  // Live clock
+  useEffect(() => {
+    const interval = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch system info once
+  useEffect(() => {
+    window.electronAPI.getSystemInfo().then(setSysInfo).catch(console.error);
+  }, []);
+
   const statusColor = {
     loading: 'text-yellow-400',
     online: 'text-green-400',
@@ -26,6 +34,15 @@ export function StatusBar({ hermesStatus, version }: StatusBarProps) {
     offline: 'Disconnected',
   };
 
+  const formatBytes = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    return `${gb.toFixed(1)} GB`;
+  };
+
+  const memUsage = sysInfo
+    ? `${formatBytes(sysInfo.totalMemory - sysInfo.freeMemory)}/${formatBytes(sysInfo.totalMemory)}`
+    : '--';
+
   return (
     <div className="bg-slate-800 border-t border-slate-700 px-4 py-2 flex items-center justify-between text-xs">
       <div className="flex items-center gap-4">
@@ -37,43 +54,33 @@ export function StatusBar({ hermesStatus, version }: StatusBarProps) {
           </span>
         </div>
 
-        {/* Divider */}
         <div className="w-px h-4 bg-slate-600" />
 
         {/* System Info */}
         <div className="flex items-center gap-1 text-slate-400">
           <Cpu className="w-3 h-3" />
-          <span>CPU: --</span>
+          <span>{sysInfo ? `${sysInfo.cpus} cores` : '--'}</span>
         </div>
 
         <div className="flex items-center gap-1 text-slate-400">
           <MemoryStick className="w-3 h-3" />
-          <span>Mem: --</span>
-        </div>
-
-        <div className="flex items-center gap-1 text-slate-400">
-          <HardDrive className="w-3 h-3" />
-          <span>Disk: --</span>
+          <span>Mem: {memUsage}</span>
         </div>
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Connection */}
         <div className="flex items-center gap-1 text-slate-400">
           <Wifi className="w-3 h-3" />
           <span>Local</span>
         </div>
 
-        {/* Divider */}
         <div className="w-px h-4 bg-slate-600" />
 
-        {/* Version */}
         <span className="text-slate-500">v{version}</span>
 
-        {/* Time */}
         <div className="flex items-center gap-1 text-slate-400">
           <Clock className="w-3 h-3" />
-          <span>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span>{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </div>
       </div>
     </div>

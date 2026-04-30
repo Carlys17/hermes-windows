@@ -20,46 +20,51 @@ export function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Listen for Python messages
+  // Listen for Python messages with proper cleanup
   useEffect(() => {
-    const handleMessage = (data: any) => {
+    const cleanup = window.electronAPI.onPythonMessage((data) => {
       if (data.type === 'stdout') {
         setMessages(prev => [...prev, {
-          id: Date.now().toString(),
+          id: `py-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           role: 'assistant',
           content: data.data,
           timestamp: new Date(),
         }]);
+      } else if (data.type === 'stderr') {
+        setMessages(prev => [...prev, {
+          id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: 'system',
+          content: data.data,
+          timestamp: new Date(),
+        }]);
       }
-    };
+    });
 
-    window.electronAPI.onPythonMessage(handleMessage);
-
-    return () => {
-      window.electronAPI.removeAllListeners('python:message');
-    };
+    // Cleanup only this specific listener (not all listeners)
+    return cleanup;
   }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}`,
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageToSend = input.trim();
     setInput('');
     setIsLoading(true);
 
     try {
-      const result = await window.electronAPI.sendChat(input.trim());
-      
+      const result = await window.electronAPI.sendChat(messageToSend);
+
       if (!result.success) {
         setMessages(prev => [...prev, {
-          id: (Date.now() + 1).toString(),
+          id: `sys-${Date.now()}`,
           role: 'system',
           content: `Error: ${result.error || 'Failed to send message'}`,
           timestamp: new Date(),
@@ -67,6 +72,12 @@ export function ChatView() {
       }
     } catch (error) {
       console.error('Failed to send message:', error);
+      setMessages(prev => [...prev, {
+        id: `sys-${Date.now()}`,
+        role: 'system',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -118,7 +129,7 @@ export function ChatView() {
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">Start a conversation</h2>
             <p className="text-slate-400 max-w-md">
-              Type a message below to chat with Hermes Agent. You can ask questions, 
+              Type a message below to chat with Hermes Agent. You can ask questions,
               request code, or run commands.
             </p>
             <div className="mt-6 grid grid-cols-2 gap-3 max-w-md">
@@ -179,7 +190,7 @@ export function ChatView() {
             </div>
           ))
         )}
-        
+
         {isLoading && (
           <div className="flex justify-start animate-fade-in">
             <div className="message-assistant px-4 py-3">
@@ -190,7 +201,7 @@ export function ChatView() {
             </div>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 

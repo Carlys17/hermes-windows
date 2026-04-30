@@ -1,64 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Activity, 
-  Brain, 
-  Clock, 
-  Cpu, 
-  HardDrive, 
+import {
+  Activity,
+  Brain,
+  Clock,
+  Cpu,
+  HardDrive,
   MemoryStick,
-  Zap,
-  TrendingUp,
   MessageSquare,
   Terminal,
-  Settings
+  Settings,
 } from 'lucide-react';
+import type { SystemInfo } from '../../electron/preload';
 
-interface SystemInfo {
-  platform: string;
-  arch: string;
-  cpus: number;
-  totalMemory: number;
-  freeMemory: number;
-  uptime: number;
+interface DashboardViewProps {
+  onNavigate?: (view: 'dashboard' | 'chat' | 'settings') => void;
 }
 
-export function DashboardView() {
+export function DashboardView({ onNavigate }: DashboardViewProps) {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [hermesHome, setHermesHome] = useState('');
+  const [uptimeStr, setUptimeStr] = useState('0h 0m');
 
   useEffect(() => {
     const loadInfo = async () => {
       try {
-        const platform = await window.electronAPI.getPlatform();
+        const info = await window.electronAPI.getSystemInfo();
+        setSystemInfo(info);
+
         const home = await window.electronAPI.getHermesHome();
-        
         setHermesHome(home);
-        setSystemInfo({
-          platform,
-          arch: 'x64', // Default
-          cpus: 8, // Default
-          totalMemory: 16 * 1024 * 1024 * 1024, // 16GB default
-          freeMemory: 8 * 1024 * 1024 * 1024, // 8GB default
-          uptime: 0,
-        });
       } catch (error) {
         console.error('Failed to load system info:', error);
       }
     };
 
     loadInfo();
+
+    // Update uptime every minute
+    const interval = setInterval(() => {
+      setSystemInfo(prev => prev ? { ...prev, uptime: prev.uptime + 60 } : prev);
+    }, 60000);
+
+    return () => clearInterval(interval);
   }, []);
+
+  // Update uptime string when systemInfo changes
+  useEffect(() => {
+    if (systemInfo) {
+      const hours = Math.floor(systemInfo.uptime / 3600);
+      const minutes = Math.floor((systemInfo.uptime % 3600) / 60);
+      setUptimeStr(`${hours}h ${minutes}m`);
+    }
+  }, [systemInfo]);
 
   const formatBytes = (bytes: number) => {
     const gb = bytes / (1024 * 1024 * 1024);
     return `${gb.toFixed(1)} GB`;
   };
 
-  const formatUptime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
-  };
+  const memPercent = systemInfo
+    ? Math.round(((systemInfo.totalMemory - systemInfo.freeMemory) / systemInfo.totalMemory) * 100)
+    : 0;
 
   const stats = [
     {
@@ -70,21 +72,23 @@ export function DashboardView() {
     },
     {
       label: 'Platform',
-      value: systemInfo?.platform || 'Unknown',
+      value: systemInfo ? `${systemInfo.platform} (${systemInfo.arch})` : 'Loading...',
       icon: Cpu,
       color: 'text-blue-400',
       bgColor: 'bg-blue-400/10',
     },
     {
       label: 'Memory',
-      value: systemInfo ? `${formatBytes(systemInfo.freeMemory)} / ${formatBytes(systemInfo.totalMemory)}` : 'Loading...',
+      value: systemInfo
+        ? `${formatBytes(systemInfo.totalMemory - systemInfo.freeMemory)} / ${formatBytes(systemInfo.totalMemory)} (${memPercent}%)`
+        : 'Loading...',
       icon: MemoryStick,
-      color: 'text-purple-400',
-      bgColor: 'bg-purple-400/10',
+      color: memPercent > 80 ? 'text-red-400' : memPercent > 60 ? 'text-yellow-400' : 'text-purple-400',
+      bgColor: memPercent > 80 ? 'bg-red-400/10' : memPercent > 60 ? 'bg-yellow-400/10' : 'bg-purple-400/10',
     },
     {
       label: 'Uptime',
-      value: systemInfo ? formatUptime(systemInfo.uptime) : '0h 0m',
+      value: uptimeStr,
       icon: Clock,
       color: 'text-yellow-400',
       bgColor: 'bg-yellow-400/10',
@@ -97,28 +101,28 @@ export function DashboardView() {
       description: 'Start a conversation with Hermes',
       icon: MessageSquare,
       color: 'from-hermes-400 to-hermes-600',
-      action: () => {/* Navigate to chat */},
+      action: () => onNavigate?.('chat'),
     },
     {
       label: 'Run Command',
       description: 'Execute a terminal command',
       icon: Terminal,
       color: 'from-green-400 to-green-600',
-      action: () => {/* Open terminal */},
+      action: () => onNavigate?.('chat'), // Commands go through chat
     },
     {
       label: 'AI Assistant',
       description: 'Get help with tasks',
       icon: Brain,
       color: 'from-purple-400 to-purple-600',
-      action: () => {/* Open assistant */},
+      action: () => onNavigate?.('chat'),
     },
     {
       label: 'Settings',
       description: 'Configure Hermes Agent',
       icon: Settings,
       color: 'from-orange-400 to-orange-600',
-      action: () => {/* Open settings */},
+      action: () => onNavigate?.('settings'),
     },
   ];
 
@@ -145,7 +149,9 @@ export function DashboardView() {
                   <Icon className={`w-4 h-4 ${stat.color}`} />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-white">{stat.value}</div>
+              <div className="text-lg font-bold text-white truncate" title={stat.value}>
+                {stat.value}
+              </div>
             </div>
           );
         })}
@@ -174,30 +180,45 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4">Recent Activity</h2>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <div className="space-y-3">
-            {[
-              { time: '2 min ago', action: 'Hermes Agent initialized', type: 'info' },
-              { time: '5 min ago', action: 'Configuration loaded', type: 'success' },
-              { time: '10 min ago', action: 'System check completed', type: 'info' },
-            ].map((activity, index) => (
-              <div key={index} className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${
-                  activity.type === 'success' ? 'bg-green-400' : 'bg-blue-400'
-                }`} />
-                <span className="text-sm text-slate-300 flex-1">{activity.action}</span>
-                <span className="text-xs text-slate-500">{activity.time}</span>
+      {/* System Details */}
+      {systemInfo && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-white mb-4">System Details</h2>
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Hostname</span>
+                <span className="text-white font-mono">{systemInfo.hostname}</span>
               </div>
-            ))}
+              <div className="flex justify-between">
+                <span className="text-slate-400">CPU</span>
+                <span className="text-white font-mono text-right truncate max-w-[200px]" title={systemInfo.cpuModel}>
+                  {systemInfo.cpuModel}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Architecture</span>
+                <span className="text-white font-mono">{systemInfo.arch}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">CPU Cores</span>
+                <span className="text-white font-mono">{systemInfo.cpus}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Total Memory</span>
+                <span className="text-white font-mono">{formatBytes(systemInfo.totalMemory)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Free Memory</span>
+                <span className="text-white font-mono">{formatBytes(systemInfo.freeMemory)}</span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Hermes Home Path */}
-      <div className="mt-6 p-4 bg-slate-800/50 border border-slate-700 rounded-xl">
+      <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl">
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <HardDrive className="w-4 h-4" />
           <span>Hermes Home:</span>
