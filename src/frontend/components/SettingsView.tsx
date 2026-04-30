@@ -110,12 +110,28 @@ export function SettingsView() {
               } : prev)}
               className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
             >
-              <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
-              <option value="anthropic/claude-opus-4">Claude Opus 4</option>
-              <option value="openai/gpt-4o">GPT-4o</option>
-              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
-              <option value="google/gemini-2.0-flash">Gemini 2.0 Flash</option>
+              <optgroup label="Anthropic">
+                <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="anthropic/claude-opus-4">Claude Opus 4</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Alibaba (DashScope)">
+                <option value="qwen3.5-plus">Qwen 3.5 Plus</option>
+                <option value="qwen3.5-flash">Qwen 3.5 Flash</option>
+                <option value="qwen3-max">Qwen 3 Max</option>
+                <option value="qwen3-coder-plus-2025-09-23">Qwen 3 Coder Plus</option>
+              </optgroup>
+              <optgroup label="Xiaomi (MiMo)">
+                <option value="mimo-v2.5-pro">MiMo v2.5 Pro</option>
+                <option value="mimo-v2.5-flash">MiMo v2.5 Flash</option>
+              </optgroup>
+              <optgroup label="Others">
+                <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+                <option value="google/gemini-2.0-flash">Gemini 2.0 Flash</option>
+              </optgroup>
             </select>
           </div>
           <div>
@@ -133,6 +149,8 @@ export function SettingsView() {
               <option value="anthropic">Anthropic</option>
               <option value="openai">OpenAI</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="alibaba-dashscope">Alibaba DashScope</option>
+              <option value="xiaomi">Xiaomi MiMo</option>
               <option value="deepseek">DeepSeek</option>
               <option value="google">Google</option>
             </select>
@@ -216,6 +234,48 @@ export function SettingsView() {
                 {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Alibaba DashScope API Key
+            </label>
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                placeholder="sk-sp-..."
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
+              />
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              For Qwen models (qwen3.5-plus, qwen3.5-flash, etc.) via Coding Plan
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Xiaomi MiMo API Key
+            </label>
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                placeholder="tp-..."
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 pr-10 text-white focus:border-hermes-500 focus:ring-1 focus:ring-hermes-500"
+              />
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              For MiMo models (mimo-v2.5-pro, etc.) via Token Plan
+            </p>
           </div>
           <p className="text-xs text-slate-500">
             API keys are stored securely in your system keychain.
