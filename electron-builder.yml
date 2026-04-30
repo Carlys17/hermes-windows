@@ -1,0 +1,83 @@
+appId: com.hermes.agent.desktop
+productName: Hermes Agent Desktop
+copyright: Copyright © 2024 Hermes Agent
+
+directories:
+  output: release
+  buildResources: src/assets
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - src/python/**/*
+  - "!**/*.ts"
+  - "!**/*.tsx"
+  - "!**/*.map"
+  - package.json
+
+extraResources:
+  - from: src/python
+    to: python
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+    - target: msi
+      arch:
+        - x64
+  icon: src/assets/icon.ico
+  artifactName: "${productName}-${version}-Setup.${ext}"
+
+portable:
+  artifactName: "${productName}-${version}-Portable.${ext}"
+
+msi:
+  artifactName: "${productName}-${version}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Hermes Agent
+  installerIcon: src/assets/icon.ico
+  uninstallerIcon: src/assets/icon.ico
+  installerHeaderIcon: src/assets/icon.ico
+  license: LICENSE
+  installerLanguages:
+    - en_US
+    - id_ID
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: src/assets/icon.icns
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: src/assets
+  category: Development
+
+publish:
+  provider: github
+  owner: carly17s
+  repo: hermes-windows
