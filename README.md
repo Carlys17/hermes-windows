@@ -1,176 +1,111 @@
 # Hermes Agent Desktop
 
-Desktop application for Hermes Agent - AI Agent for Windows.
+Desktop shell for Hermes Agent on Windows, built with Electron, React, and an embedded Python runtime.
+
+> Status: pre-release. The desktop UI, packaging config, and local Python wrapper are present, but upstream `NousResearch/hermes-agent` currently documents native Windows as unsupported and recommends WSL2. This app can build and run in wrapper/stub mode; full upstream Hermes integration on native Windows is experimental.
 
 ## Features
 
-- 🤖 **AI Chat Interface** - Chat with Hermes Agent
-- 📊 **Dashboard** - System monitoring and quick actions
-- ⚙️ **Settings** - Configure model, API keys, and preferences
-- 🖥️ **Standalone** - No internet required after setup
-- 🚀 **Fast** - Native performance with Electron
+- AI chat shell with a Python backend wrapper
+- Dashboard with local system information
+- Settings for model preferences and encrypted API key storage
+- Windows x64 build targets: NSIS setup and portable EXE
+- Hardened Electron defaults: context isolation, sandbox, limited preload API, and CSP
 
 ## Quick Start
 
 ### Prerequisites
 
-- **Windows 10/11**
-- **Node.js 18+** (https://nodejs.org)
-- **Python 3.10+** (https://www.python.org/downloads/)
-- **Git** (https://git-scm.com)
+- Windows 10/11
+- Node.js 18+
+- Git
+- Internet access during setup/build
+
+You do not need a system Python install for the desktop build. `setup-python.bat` downloads the Python embedded runtime into `src/python`.
 
 ### Installation
 
-1. **Clone the repository**
-   ```batch
-   git clone https://github.com/carly17s/hermes-windows.git
-   cd hermes-windows
-   ```
-
-2. **Setup Python & Hermes Agent**
-   ```batch
-   setup-python.bat
-   ```
-   This will:
-   - Download Python embedded distribution
-   - Install pip
-   - Clone Hermes Agent repository
-   - Install all dependencies
-
-3. **Install Node.js dependencies**
-   ```batch
-   npm install
-   ```
-
-4. **Build for Windows**
-   ```batch
-   build.bat
-   ```
-
-### Output
-
-After build, you'll find in `release/`:
-- `Hermes Agent Desktop-1.0.0-Setup.exe` - Installer
-- `Hermes Agent Desktop-1.0.0.exe` - Portable
-
-## Development
-
-### Run in Dev Mode
 ```batch
-npm run dev
+git clone https://github.com/Carlys17/hermes-windows.git
+cd hermes-windows
+setup-python.bat
+npm install
 ```
 
-This starts:
-- Vite dev server (hot-reload)
-- Electron window
-- Python backend
+`setup-python.bat` is idempotent. It:
 
-### Build Options
+- downloads Python 3.11 embedded if `src\python\python.exe` is missing
+- enables `site-packages`
+- installs or updates pip
+- validates that the desktop backend wrapper exists
+
+It does **not** clone upstream Hermes into `src\python\hermes-agent`; that directory belongs to the desktop wrapper Electron starts.
+
+### Optional Experimental Upstream Install
 
 ```batch
-build.bat              # Build Setup.exe (default)
-build.bat --all        # Build all formats (Setup, Portable, MSI)
-build.bat --portable   # Build portable .exe only
-build.bat --setup      # Build Setup.exe only
+setup-python.bat --with-upstream
+```
+
+This attempts to install upstream `NousResearch/hermes-agent` into the embedded Python runtime. It is experimental because upstream Hermes currently recommends WSL2 rather than native Windows.
+
+For the fully supported Hermes Agent experience on Windows, install Hermes inside WSL2 using the upstream documentation: https://hermes-agent.nousresearch.com/docs/
+
+## Build
+
+```batch
+build.bat
+```
+
+Build variants:
+
+```batch
+build.bat --setup      # NSIS installer only
+build.bat --portable   # Portable .exe only
+build.bat --all        # Setup + Portable
 build.bat --dev        # Run in dev mode
 build.bat --clean      # Clean and rebuild
 ```
 
+After build, output appears in `release/`.
+
+## Development
+
+```batch
+npm run dev
+```
+
+This starts the Vite dev server and Electron. The Python backend wrapper starts from `src/python/hermes-agent/run_agent.py`.
+
 ## Project Structure
 
-```
+```text
 hermes-windows/
 ├── src/
-│   ├── electron/          # Electron main process
-│   │   ├── main.ts        # Main entry point
-│   │   └── preload.ts     # Preload script
-│   ├── frontend/          # React frontend
-│   │   ├── components/    # UI components
-│   │   ├── styles/        # CSS styles
-│   │   ├── App.tsx        # Main app component
-│   │   └── main.tsx       # Entry point
-│   ├── python/            # Python runtime & Hermes Agent
-│   │   ├── python.exe     # Python executable (Windows)
-│   │   └── hermes-agent/  # Hermes Agent source
-│   └── assets/            # Icons and resources
-├── dist/                  # Built frontend
-├── dist-electron/         # Compiled Electron
-├── release/               # Built installers
-├── package.json           # Dependencies
-├── electron-builder.yml   # Build config
-└── vite.config.ts         # Vite config
+│   ├── electron/              # Electron main process and preload bridge
+│   ├── frontend/              # React UI
+│   ├── python/                # Embedded Python runtime after setup
+│   │   └── hermes-agent/      # Desktop backend wrapper, not upstream clone
+│   └── assets/                # App icons
+├── electron-builder.yml       # Windows packaging config
+├── vite.config.ts             # Vite frontend config
+├── package.json               # Node dependencies and scripts
+└── PRODUCTION-READY.md        # Release-readiness checklist and limitations
 ```
 
 ## Configuration
 
-### API Keys
+Settings are stored through Electron in a local config store. API keys are saved with Electron `safeStorage` when available.
 
-Set your API keys in Settings or create `.env` file:
+Important: the current desktop wrapper does not yet automatically forward keys saved in the Settings UI into a newly installed upstream Hermes runtime. For upstream Hermes experiments, configure credentials in the environment or Hermes config expected by upstream Hermes.
 
-```env
-OPENROUTER_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
-OPENAI_API_KEY=your_key_here
-```
+## Current Limitations
 
-### Model Selection
-
-Change default model in Settings or `config.yaml`:
-
-```yaml
-model:
-  default: anthropic/claude-sonnet-4
-  provider: anthropic
-```
-
-## Building from Source
-
-### Windows Build
-
-```batch
-# 1. Setup Python
-setup-python.bat
-
-# 2. Install dependencies
-npm install
-
-# 3. Build
-npm run build:win
-```
-
-### Output Formats
-
-- **NSIS Setup.exe** - Traditional installer
-- **Portable .exe** - No installation required
-- **MSI** - Microsoft Installer
-
-## Troubleshooting
-
-### Build fails
-```batch
-# Clean and rebuild
-build.bat --clean
-```
-
-### Python not found
-- Install Python 3.10+ from https://www.python.org
-- Check "Add Python to PATH" during installation
-
-### Dependencies error
-```batch
-# Delete node_modules and reinstall
-rmdir /s /q node_modules
-npm install
-```
-
-### Electron-builder error
-```batch
-# Install electron-builder globally
-npm install -g electron-builder
-
-# Build again
-npm run build:win
-```
+- No published GitHub release artifacts yet.
+- No automated tests or CI workflow yet.
+- Code signing is disabled, so Windows SmartScreen warnings are expected.
+- Native Windows upstream Hermes support is experimental; WSL2 remains the supported path.
+- The bundled desktop wrapper falls back to local stub responses when upstream Hermes is unavailable.
 
 ## License
 
@@ -179,13 +114,8 @@ MIT License - see [LICENSE](LICENSE)
 ## Credits
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) - Nous Research
-- [Electron](https://www.electronjs.org/) - Cross-platform desktop apps
-- [React](https://react.dev/) - UI framework
-- [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
-- [Vite](https://vitejs.dev/) - Build tool
-- [Lucide](https://lucide.dev/) - Icons
-
-## Support
-
-- GitHub Issues: https://github.com/carly17s/hermes-windows/issues
-- Documentation: https://hermes-agent.nousresearch.com/docs/
+- [Electron](https://www.electronjs.org/)
+- [React](https://react.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Vite](https://vitejs.dev/)
+- [Lucide](https://lucide.dev/)
