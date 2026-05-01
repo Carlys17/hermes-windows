@@ -36,14 +36,10 @@ win:
       arch:
         - x64
   icon: src/assets/icon.ico
-  artifactName: "${productName}-${version}-Setup.${ext}"
-  # No signing certificate configured
   signAndEditExecutable: false
 
-portable:
-  artifactName: "${productName}-${version}-Portable.${ext}"
-
 nsis:
+  artifactName: "${productName}-${version}-Setup.${ext}"
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -58,6 +54,9 @@ nsis:
   installerLanguages:
     - en_US
     - id_ID
+
+portable:
+  artifactName: "${productName}-${version}-Portable.${ext}"
 
 publish:
   provider: github

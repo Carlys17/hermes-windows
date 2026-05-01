@@ -5,19 +5,19 @@ Hermes Agent Desktop - CLI Command Runner
 Executes a single command and exits with the appropriate exit code.
 Usage: python cli.py <command> [args...]
 
-When the real Hermes Agent is installed, replace this with the actual CLI.
+Windows-compatible: maps Unix commands to Windows equivalents.
 """
 
 import sys
 import os
 import platform
 import subprocess
+import shutil
 import json
 from datetime import datetime
 
 
 # Defense-in-depth whitelist (matches Electron main.ts)
-# Removed: python, pip, git, node, npm, top — allow arbitrary code execution
 ALLOWED_COMMANDS = {
     'hermes', 'hermes-agent',
     'ls', 'cat', 'echo', 'pwd', 'whoami', 'uname', 'df', 'free',
@@ -26,8 +26,51 @@ ALLOWED_COMMANDS = {
 
 DANGEROUS_CHARS = set(';&|`$(){}!<>\x00')
 
+# Windows command mappings
+WINDOWS_CMD_MAP = {
+    'ls': 'dir',
+    'cat': 'type',
+    'pwd': 'cd',
+    'whoami': 'whoami',
+    'uname': 'ver',
+    'df': 'wmic',
+    'free': 'wmic',
+    'ps': 'tasklist',
+    'head': 'more',
+    'tail': 'more',
+    'grep': 'findstr',
+    'find': 'findstr',
+    'wc': 'find /c',
+    'echo': 'echo',
+}
 
-def run_command(bin_name: str, args: list[str]) -> int:
+
+def resolve_command(bin_name: str) -> tuple:
+    """Resolve a command to its Windows equivalent and return (cmd, use_shell)."""
+    is_windows = platform.system() == 'Windows'
+
+    if bin_name in ('hermes', 'hermes-agent'):
+        return bin_name, False
+
+    if not is_windows:
+        # On Linux/macOS, use the command directly
+        return bin_name, False
+
+    # Windows: map to Windows equivalents
+    win_cmd = WINDOWS_CMD_MAP.get(bin_name)
+    if win_cmd:
+        # Use shell=True for cmd.exe built-in commands
+        shell_cmds = {'dir', 'type', 'cd', 'ver', 'echo', 'more', 'findstr', 'find'}
+        return win_cmd, win_cmd in shell_cmds
+
+    # Check if it's a real executable on PATH
+    if shutil.which(bin_name):
+        return bin_name, False
+
+    return None, False
+
+
+def run_command(bin_name: str, args: list) -> int:
     """Run a whitelisted command and stream output."""
     try:
         if bin_name in ('hermes', 'hermes-agent'):
@@ -50,13 +93,29 @@ def run_command(bin_name: str, args: list[str]) -> int:
                 print(f'Unknown hermes command: {args[0]}')
                 return 1
 
-        # For system commands, use subprocess
-        result = subprocess.run(
-            [bin_name] + args,
-            capture_output=False,
-            timeout=30,
-        )
-        return result.returncode
+        # Resolve to platform-specific command
+        cmd, use_shell = resolve_command(bin_name)
+        if cmd is None:
+            print(f'Command not found: {bin_name}')
+            return 127
+
+        if use_shell:
+            # For cmd.exe built-ins, use shell=True
+            full_cmd = ' '.join([cmd] + args)
+            result = subprocess.run(
+                full_cmd,
+                shell=True,
+                capture_output=False,
+                timeout=30,
+            )
+            return result.returncode
+        else:
+            result = subprocess.run(
+                [cmd] + args,
+                capture_output=False,
+                timeout=30,
+            )
+            return result.returncode
 
     except FileNotFoundError:
         print(f'Command not found: {bin_name}')
@@ -96,7 +155,7 @@ def main():
             print(f'Dangerous character in argument: {arg[:50]}')
             return 1
 
-    return run_command(bin_name, args)
+    return run_command(base_name, args)
 
 
 if __name__ == '__main__':

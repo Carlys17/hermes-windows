@@ -5,6 +5,7 @@ import { SettingsView } from './components/SettingsView';
 import { DashboardView } from './components/DashboardView';
 import { Titlebar } from './components/Titlebar';
 import { StatusBar } from './components/StatusBar';
+import { UpdateDialog } from './components/UpdateDialog';
 
 type View = 'dashboard' | 'chat' | 'settings';
 
@@ -140,6 +141,7 @@ function App() {
       ) : (
         <div className="flex flex-col h-screen bg-slate-900">
           <Titlebar version={version} />
+          <UpdateDialog />
 
           <div className="flex flex-1 overflow-hidden">
             <Sidebar

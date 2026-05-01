@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.lock
+coverage/
+*.min.js
+*.min.css

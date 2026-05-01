@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { spawn, ChildProcess } from 'child_process';
+import { logger } from './logger';
 
 // Fix #1: electron-store is ESM-only in v8; use lazy dynamic import for CJS compat
 let store: any = null;
@@ -16,10 +17,10 @@ async function getStore() {
 
 // Fix #6: Global error handlers
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
+  logger.error('Uncaught exception:', err?.message || String(err));
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
+  logger.error('Unhandled rejection:', String(reason));
 });
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -45,6 +46,8 @@ const HERMES_PATH = isDevMode
 const ICON_PATH = isDevMode
   ? path.join(__dirname, '..', 'src', 'assets', 'icon.png')
   : path.join(process.resourcesPath, 'assets', 'icon.png');
+
+
 
 // ─── Security: command whitelist & validation ───────────────────
 
@@ -187,24 +190,59 @@ async function initPythonBackend(): Promise<boolean> {
   const pythonExe = getPythonExe();
 
   if (!fs.existsSync(pythonExe)) {
-    console.error('Python runtime not found:', pythonExe);
+    logger.error('Python runtime not found:', pythonExe);
     mainWindow?.webContents.send('python:status', { status: 'missing', path: pythonExe });
     return false;
   }
 
   const hermesScript = path.join(HERMES_PATH, 'run_agent.py');
   if (!fs.existsSync(hermesScript)) {
-    console.error('Hermes agent script not found:', hermesScript);
+    logger.error('Hermes agent script not found:', hermesScript);
     mainWindow?.webContents.send('python:status', { status: 'missing', path: hermesScript });
     return false;
+  }
+
+  // Load API keys to pass to Python backend via environment
+  const envVars: Record<string, string> = {
+    HERMES_HOME: path.join(app.getPath('userData'), '.hermes'),
+    PYTHONPATH: HERMES_PATH,
+  };
+  try {
+    const s = await getStore();
+    const credKeys = [
+      'cred.openrouter_api_key',
+      'cred.anthropic_api_key',
+      'cred.dashscope_api_key',
+      'cred.xiaomi_api_key',
+    ];
+    const envKeyMap: Record<string, string> = {
+      'cred.openrouter_api_key': 'OPENROUTER_API_KEY',
+      'cred.anthropic_api_key': 'ANTHROPIC_API_KEY',
+      'cred.dashscope_api_key': 'DASHSCOPE_API_KEY',
+      'cred.xiaomi_api_key': 'XIAOMI_API_KEY',
+    };
+    for (const storeKey of credKeys) {
+      const raw = s.get(storeKey) as string | undefined;
+      if (raw) {
+        let decrypted: string;
+        if (safeStorage.isEncryptionAvailable()) {
+          decrypted = safeStorage.decryptString(Buffer.from(raw, 'base64'));
+        } else {
+          decrypted = Buffer.from(raw, 'base64').toString('utf-8');
+        }
+        const envKey = envKeyMap[storeKey];
+        if (envKey) envVars[envKey] = decrypted;
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to load credentials for Python backend:', String(err));
   }
 
   try {
     pythonProcess = spawn(pythonExe, [hermesScript], {
       env: {
         ...process.env,
-        HERMES_HOME: path.join(app.getPath('userData'), '.hermes'),
-        PYTHONPATH: HERMES_PATH,
+        ...envVars,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -216,32 +254,32 @@ async function initPythonBackend(): Promise<boolean> {
 
     pythonProcess.stderr?.on('data', (data) => {
       const message = data.toString();
-      console.error('Python stderr:', message);
+      logger.error('Python stderr:', message);
       mainWindow?.webContents.send('python:message', { type: 'stderr', data: message });
     });
 
     pythonProcess.on('close', (code) => {
-      console.log('Python process exited with code:', code);
+      logger.info('Python process exited with code:', String(code));
       mainWindow?.webContents.send('python:exit', { code });
       pythonProcess = null;
 
       // Auto-restart on crash (not on clean exit)
       if (code !== 0 && code !== null && pythonRestartCount < MAX_PYTHON_RESTARTS) {
         pythonRestartCount++;
-        console.log(`Restarting Python backend (attempt ${pythonRestartCount}/${MAX_PYTHON_RESTARTS})...`);
+        logger.info(`Restarting Python backend (attempt ${pythonRestartCount}/${MAX_PYTHON_RESTARTS})...`);
         setTimeout(() => initPythonBackend(), 2000);
       }
     });
 
     pythonProcess.on('error', (err) => {
-      console.error('Python process error:', err);
+      logger.error('Python process error:', String(err));
       pythonProcess = null;
     });
 
     pythonRestartCount = 0;
     return true;
   } catch (error) {
-    console.error('Failed to initialize Python:', error);
+    logger.error('Failed to initialize Python:', String(error));
     return false;
   }
 }
@@ -309,7 +347,7 @@ ipcMain.handle('credentials:get', async (_event, key: string) => {
     }
     return Buffer.from(stored, 'base64').toString('utf-8');
   } catch (err) {
-    console.error('Failed to decrypt credential:', key);
+    logger.error('Failed to decrypt credential:', key);
     return null;
   }
 });
@@ -330,7 +368,7 @@ ipcMain.handle('credentials:set', async (_event, key: string, value: string) => 
     }
     return { success: true };
   } catch (err) {
-    console.error('Failed to store credential:', key);
+    logger.error('Failed to store credential:', key);
     return { success: false, error: String(err) };
   }
 });
@@ -485,7 +523,7 @@ async function setupAutoUpdater() {
     });
 
     autoUpdater.on('error', (err) => {
-      console.error('Auto-updater error:', err);
+      logger.error('Auto-updater error:', String(err));
     });
 
     // Check for updates after 5 seconds
@@ -494,11 +532,11 @@ async function setupAutoUpdater() {
     // Fix #15: Periodic update check every 4 hours
     setInterval(() => {
       autoUpdater.checkForUpdates().catch((err) => {
-        console.error('Periodic update check failed:', err);
+        logger.error('Periodic update check failed:', String(err));
       });
     }, 4 * 60 * 60 * 1000);
   } catch (err) {
-    console.error('Failed to setup auto-updater:', err);
+    logger.error('Failed to setup auto-updater:', String(err));
   }
 }
 
@@ -529,8 +567,17 @@ ipcMain.handle('update:install', async () => {
     const { autoUpdater } = await import('electron-updater');
     autoUpdater.quitAndInstall(false, true);
   } catch (err) {
-    console.error('Failed to install update:', err);
+    logger.error('Failed to install update:', String(err));
   }
+});
+
+// Logging — receive log entries from renderer process
+ipcMain.handle('log', (_event, level: string, message: string, meta?: any) => {
+  const logFn = level === 'error' ? logger.error :
+    level === 'warn' ? logger.warn :
+    level === 'debug' ? logger.debug : logger.info;
+  logFn(message, meta);
+  return { success: true };
 });
 
 // ─── App lifecycle ──────────────────────────────────────────────

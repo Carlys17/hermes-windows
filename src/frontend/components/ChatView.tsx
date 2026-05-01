@@ -50,17 +50,41 @@ export function ChatView({ hermesStatus = 'online' }: ChatViewProps) {
   useEffect(() => {
     const cleanup = window.electronAPI.onPythonMessage((data) => {
       if (data.type === 'stdout') {
-        setMessages(prev => [...prev, {
-          id: `py-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          role: 'assistant',
-          content: data.data,
-          timestamp: new Date(),
-        }]);
+        // Parse JSON response from Python backend
+        try {
+          const parsed = JSON.parse(data.data);
+          // Skip status/startup messages (e.g. "Hermes Agent backend started")
+          if (parsed.type === 'status') return;
+
+          const content: string =
+            typeof parsed.content === 'string'
+              ? parsed.content
+              : typeof parsed.message === 'string'
+              ? parsed.message
+              : data.data; // Fallback: show raw if not parseable
+
+          setMessages(prev => [...prev, {
+            id: `py-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            role: parsed.type === 'error' ? 'system' : 'assistant',
+            content,
+            timestamp: new Date(),
+          }]);
+        } catch {
+          // Not JSON — display raw (e.g. plain print() output from Python)
+          setMessages(prev => [...prev, {
+            id: `py-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            role: 'assistant',
+            content: data.data.trim(),
+            timestamp: new Date(),
+          }]);
+        }
       } else if (data.type === 'stderr') {
+        const msg = data.data.trim();
+        if (!msg) return; // Skip empty stderr lines
         setMessages(prev => [...prev, {
           id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           role: 'system',
-          content: data.data,
+          content: `[stderr] ${msg}`,
           timestamp: new Date(),
         }]);
       }

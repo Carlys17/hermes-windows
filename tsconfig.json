@@ -17,8 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": ["jest", "node"]
   },
-  "include": ["src/frontend"],
+  "include": ["src/frontend", "src/frontend/__tests__/**/*"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -54,6 +54,9 @@ export interface ElectronAPI {
   onPythonExit: (callback: (data: { code: number }) => void) => () => void;
   onPythonStatus: (callback: (data: { status: string; path?: string }) => void) => () => void;
 
+  // Logging
+  log: (level: string, message: string, meta?: any) => Promise<{ success: boolean }>;
+
   // Auto-updater
   onUpdateAvailable: (callback: (data: { version: string; releaseDate: string }) => void) => () => void;
   onUpdateProgress: (callback: (data: { percent: number; transferred: number; total: number }) => void) => () => void;

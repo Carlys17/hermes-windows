@@ -61,10 +61,21 @@ if %CLEAN%==1 (
 )
 
 REM Check Python setup
-if not exist "src\python\python.exe" (
+set PYTHON_OK=0
+if exist "src\python\python.exe" (
+    echo [OK] Embedded Python found: src\python\python.exe
+    set PYTHON_OK=1
+) else (
+    where python >nul 2>nul
+    if !errorlevel!==0 (
+        echo [OK] Using system Python (embedded Python not found, run setup-python.bat for bundling)
+        set PYTHON_OK=1
+    )
+)
+if !PYTHON_OK!==0 (
     echo.
-    echo [WARNING] Python not setup!
-    echo [INFO] Run setup-python.bat first to download Python and Hermes Agent.
+    echo [WARNING] Python not found!
+    echo [INFO] Run setup-python.bat first, or install Python from https://www.python.org
     echo.
     pause
     exit /b 1
@@ -111,6 +122,13 @@ if "%BUILD_TYPE%"=="dev" (
     exit /b 0
 )
 
+REM Fix icon if missing
+if not exist "src\assets\icon.ico" (
+    echo.
+    echo [INFO] icon.ico not found — attempting to generate from icon.png...
+    call fix-icon.bat
+)
+
 REM Build packages
 echo.
 echo [BUILD] Creating Windows package...
@@ -118,21 +136,23 @@ echo [BUILD] Creating Windows package...
 if "%BUILD_TYPE%"=="all" (
     echo Building all formats...
     call npm run build:all
+    set BUILD_ERR=%errorlevel%
     goto :build_done
 )
 
 if "%BUILD_TYPE%"=="portable" (
     echo Building portable...
     call npm run build:win:portable
+    set BUILD_ERR=%errorlevel%
     goto :build_done
 )
 
 REM Default: Setup.exe
 echo Building Setup.exe...
 call npm run build:win:setup
-
+set BUILD_ERR=%errorlevel%
 :build_done
-if %errorlevel% neq 0 (
+if %BUILD_ERR% neq 0 (
     echo.
     echo [ERROR] Build failed!
     pause
@@ -164,3 +184,4 @@ echo   build.bat --dev        Run in dev mode
 echo   build.bat --clean      Clean and rebuild
 echo.
 pause
+endlocal
