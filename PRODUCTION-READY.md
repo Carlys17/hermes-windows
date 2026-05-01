@@ -1,241 +1,163 @@
-# Hermes Agent Desktop — Production Ready Guide
+# Hermes Agent Desktop - Production Readiness Guide
 
-## Status Saat Ini
+## Current Status
 
 Repository: https://github.com/Carlys17/hermes-windows
-Branch: `main` (3 commits ahead, sudah di-push)
+Branch: `main`
 Version: `1.0.0`
+Status: **pre-release / not production-ready yet**
+
+The project has useful security hardening and a working Electron shell, but it should not be described as production-ready until the Windows build, backend integration, installer, and release checks below have passed.
+
+Important upstream note: `NousResearch/hermes-agent` currently documents native Windows as unsupported and recommends WSL2. Native Windows upstream integration in this desktop app is therefore experimental.
 
 ---
 
-## Apa yang Sudah Dikerjakan
+## Completed Work
 
-### Security Hardening (Critical)
+### Security Hardening
 
-- **Command whitelist** — hanya command read-only yang diizinkan (`hermes`, `ls`, `cat`, `echo`, `pwd`, `whoami`, `uname`, `df`, `free`, `ps`, `head`, `tail`, `grep`, `find`, `wc`)
-- **Dangerous commands DIHAPUS** — `python`, `pip`, `git`, `node`, `npm` tidak ada di whitelist karena bisa arbitrary code execution via `-c`/`-e` flags
-- **Path separator bypass prevention** — input yang mengandung `/` atau `\` langsung ditolak
-- **Null byte injection prevention** — `\0` ditambahkan ke dangerous chars
-- **Electron sandbox enabled** — `sandbox: true` di BrowserWindow
-- **Content-Security-Policy headers** — prevent XSS dan inline script injection
-- **Concurrency limit** — max 5 command concurrent, sisanya di-queue
-- **Timeout + output cap** — 30s timeout per command, 1MB max output
-- **Credential key validation** — regex `/^[a-zA-Z0-9_-]{1,64}$/` untuk API key names
-- **Global error handlers** — `uncaughtException` dan `unhandledRejection` ditangkap
+- Command whitelist limits command execution to a small read-only set.
+- Dangerous commands such as `python`, `pip`, `git`, `node`, and `npm` are not exposed through the renderer command channel.
+- Path separator and shell metacharacter checks reduce command-whitelist bypass risk.
+- Electron renderer uses `contextIsolation`, `nodeIntegration: false`, and `sandbox: true`.
+- Content-Security-Policy headers are configured.
+- Command execution has a 30 second timeout, 1 MB output cap, and a max concurrent command limit.
+- Credential keys are validated before storage.
+- API keys are stored through Electron `safeStorage` when available.
+- Global main-process error handlers are present.
 
-### electron-store ESM/CJS Fix
+### Runtime And Build Setup
 
-- electron-store v8 adalah ESM-only, tapi Electron main process pakai CJS
-- Fix: lazy dynamic import via `async function getStore()`
-- Tidak crash saat startup
+- `setup-python.bat` now downloads and prepares embedded Python idempotently.
+- The script no longer clones upstream Hermes into `src\python\hermes-agent`, because that directory belongs to the Electron desktop wrapper.
+- Optional experimental upstream install is available with `setup-python.bat --with-upstream`.
+- Windows x64 NSIS and portable targets are configured.
+- Code signing is disabled until a signing certificate is available.
 
-### UX Fixes
+### Frontend UX
 
-- **Error boundary** di React — kalau component crash, user dapat error message + retry button, bukan blank screen
-- **Smart scroll** — kalau user scroll up manual, chat tidak force-scroll ke bawah
-- **Load error state** di Settings — kalau gagal load config, ada retry button
-- **Clamp warnings** — input numeric di Settings kasih warning kalau di luar range
-- **maxLength on textarea** — prevent input terlalu panjang
-- **aria-labels** di semua icon buttons — accessibility
-- **role=navigation** di sidebar — screen reader support
-- **copyTimeout cleanup** — prevent memory leak on unmount
-
-### Build Config
-
-- **Target:** Windows x64 only (macOS/Linux dihapus, ini Windows-only project)
-- **Output formats:** NSIS Setup.exe + Portable .exe (MSI dihapus)
-- **Code signing:** disabled (`signAndEditExecutable: false`) — belum punya cert
-- **Auto-updater:** config ada (`publish: github`), periodic check setiap 4 jam
-- **asar:** enabled untuk security dan performance
-- **extraResources:** Python runtime + Hermes Agent source di-bundle
-
-### Python Backend
-
-- `cli.py` whitelist disinkronisasi dengan Electron `main.ts`
-- Path separator rejection di Python juga
-- Dangerous chars check di args
+- Error boundary prevents a blank renderer on React crashes.
+- Chat scroll behavior avoids forcing the user to the bottom when they scrolled up.
+- Settings has retry/error states.
+- Numeric settings are clamped to safe ranges.
+- Textarea length is capped.
+- Icon buttons include accessible labels.
 
 ---
 
-## Yang Perlu Dilakukan di Windows
+## Known Limitations
 
-### Step 1: Clone & Install
+### Native Hermes Backend
+
+The bundled backend wrapper can run in stub mode. It can optionally try to use an installed upstream `hermes-agent` package, but this is experimental on native Windows because upstream Hermes recommends WSL2.
+
+Required before production:
+
+- Decide whether the supported production path is native Windows, WSL2 bridge, or UI-only wrapper.
+- If native Windows is required, validate upstream Hermes dependencies on Windows and pin a known-good upstream commit/tag.
+- Wire Settings UI credentials into the backend runtime safely, or clearly require `.env` / upstream config.
+- Add end-to-end chat tests with a real provider key in a secure CI environment.
+
+### Code Signing
+
+`signAndEditExecutable: false` means Windows SmartScreen will warn users. Production distribution should use a proper code signing certificate or a trusted signing service.
+
+### Tests
+
+There are no automated tests yet. Add at minimum:
+
+- unit tests for command parsing/validation
+- renderer tests for Settings and Chat flows
+- backend wrapper tests for stub mode and upstream-missing mode
+- smoke build on Windows
+
+### CI/CD
+
+There is no GitHub Actions workflow yet. A release workflow should build on `windows-latest`, upload artifacts, and attach them to tagged releases.
+
+---
+
+## Windows Build Steps
 
 ```batch
 git clone https://github.com/Carlys17/hermes-windows.git
 cd hermes-windows
 setup-python.bat
 npm install
-```
-
-### Step 2: Build
-
-```batch
 build.bat
 ```
 
-Atau pilih format tertentu:
+Optional experimental upstream package install:
 
 ```batch
-build.bat --setup      # NSIS installer saja
-build.bat --portable   # Portable .exe saja
-build.bat --all        # Semua format
+setup-python.bat --with-upstream
 ```
 
-### Step 3: Output
-
-Hasil build ada di `release/`:
-
-- `Hermes Agent Desktop-1.0.0-Setup.exe` — Installer (rekomendasi untuk distribusi)
-- `Hermes Agent Desktop-1.0.0-Portable.exe` — Portable, tidak perlu install
-
-### Step 4: Test
-
-1. Jalankan Setup.exe atau Portable.exe
-2. Cek Dashboard — harusnya ada system info
-3. Cek Settings — test simpan API key, ganti model
-4. Cek Chat — test kirim pesan (butuh API key yang valid)
-5. Cek Titlebar — minimize/maximize/close harusnya jalan
-6. Cek Sidebar — navigasi antar view harusnya smooth
-
----
-
-## Known Issues & Limitations
-
-### ⚠️ Code Signing
-
-`signAndEditExecutable: false` — Windows SmartScreen akan muncul warning "Windows protected your PC". User harus klik "More info" → "Run anyway".
-
-**Fix:** Beli code signing certificate (EV cert ~$200/tahun) atau gunakan SignPath.io (free untuk open source).
-
-### ⚠️ Python Backend Dependency
-
-App meng-clone Hermes Agent source dari GitHub saat `setup-python.bat`. Kalau Hermes upstream update breaking changes, desktop app bisa pecah.
-
-**Fix:** Pin ke specific commit/tag di `setup-python.bat`:
-```batch
-git clone --branch v1.0.0 --depth 1 https://github.com/NousResearch/hermes-agent.git
-```
-
-### ⚠️ Tidak Ada Tests
-
-Zero test files, zero coverage. Kalau mau tambah:
+Build variants:
 
 ```batch
-npm install --save-dev jest @testing-library/react @testing-library/jest-dom
+build.bat --setup      # NSIS installer only
+build.bat --portable   # Portable .exe only
+build.bat --all        # Setup + Portable
 ```
 
-Buat test di `src/__tests__/` atau `src/frontend/__tests__/`.
-
-### ⚠️ Tidak Ada CI/CD
-
-Belum ada GitHub Actions workflow. Kalau mau auto-build setiap push:
-
-Buat file `.github/workflows/build.yml`:
-
-```yaml
-name: Build & Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm install
-      - run: npm run build
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
+Expected output directory: `release/`.
 
 ---
 
 ## Architecture Overview
 
-```
+```text
 hermes-windows/
 ├── src/
-│   ├── electron/              # Electron main process
-│   │   ├── main.ts            # Entry point, IPC handlers, security
-│   │   └── preload.ts         # Context bridge (renderer ↔ main)
+│   ├── electron/              # Electron main process, IPC handlers, security checks
 │   ├── frontend/              # React UI
-│   │   ├── App.tsx            # Root + ErrorBoundary + routing
-│   │   ├── components/
-│   │   │   ├── ChatView.tsx   # Chat interface
-│   │   │   ├── DashboardView.tsx  # System monitoring
-│   │   │   ├── SettingsView.tsx   # API keys, model config
-│   │   │   ├── Sidebar.tsx    # Navigation
-│   │   │   ├── StatusBar.tsx  # Bottom status bar
-│   │   │   └── Titlebar.tsx   # Custom window titlebar
-│   │   ├── styles/index.css   # Tailwind CSS
-│   │   ├── types.ts           # TypeScript types
-│   │   └── utils.ts           # Shared utilities
-│   ├── python/                # Python runtime
-│   │   ├── hermes-agent/      # Hermes Agent source (cloned)
-│   │   └── cli.py             # CLI wrapper
-│   └── assets/                # Icons (16px - 512px, .ico, .svg)
-├── electron-builder.yml       # Build config
+│   ├── python/                # Embedded Python runtime after setup
+│   │   └── hermes-agent/      # Desktop backend wrapper, not upstream clone
+│   └── assets/                # App icons
+├── electron-builder.yml       # Windows build config
 ├── vite.config.ts             # Vite frontend config
-├── tsconfig.json              # TypeScript (frontend)
-├── tsconfig.electron.json     # TypeScript (electron)
-└── package.json               # Dependencies & scripts
+├── tsconfig.json              # TypeScript frontend config
+├── tsconfig.electron.json     # TypeScript Electron config
+└── package.json               # Dependencies and scripts
 ```
 
 ## Data Flow
 
-```
+```text
 User Input (Chat)
     ↓
-React (ChatView.tsx)
-    ↓ IPC: window.electronAPI.sendMessage()
-Electron Main (main.ts)
-    ↓ spawn() → Python CLI
-Python (cli.py → hermes-agent)
-    ↓ Response
+React ChatView
+    ↓ IPC: window.electronAPI.sendChat(message)
 Electron Main
-    ↓ IPC: mainWindow.webContents.send()
-React (ChatView.tsx)
+    ↓ stdin JSON: { type: "chat", message }
+Python desktop backend wrapper
+    ↓ stdout plain text
+Electron Main
+    ↓ IPC: python:message
+React ChatView
     ↓ Render response
 ```
 
-## Security Model
+---
 
-- **Renderer** (React) tidak punya akses ke Node.js — hanya bisa lewat `window.electronAPI`
-- **Preload** expose API terbatas via `contextBridge.exposeInMainWorld()`
-- **Main process** validasi semua input sebelum eksekusi
-- **Command whitelist** — hanya command read-only yang diizinkan
-- **No arbitrary code execution** — `python`, `node`, `git`, `npm` dihapus dari whitelist
-- **Sandbox enabled** — renderer tidak bisa akses sistem file langsung
-- **CSP headers** — prevent XSS dan injection
+## Production Release Checklist
+
+- [ ] Build successfully on a clean Windows 10/11 machine.
+- [ ] Run `setup-python.bat` twice to confirm idempotency.
+- [ ] Run `setup-python.bat --with-upstream` on Windows and document whether upstream install is supported or experimental.
+- [ ] Test Dashboard, Chat, Settings, Sidebar, Titlebar, and StatusBar.
+- [ ] Test Settings save/load for API keys and non-sensitive config.
+- [ ] Confirm how API keys reach the backend runtime.
+- [ ] Test chat behavior with no upstream Hermes installed.
+- [ ] Test chat behavior with upstream Hermes installed and valid credentials.
+- [ ] Test bad API key and network-error handling.
+- [ ] Add unit/integration tests.
+- [ ] Add GitHub Actions build workflow.
+- [ ] Sign Windows executables or document SmartScreen warning clearly.
+- [ ] Create a Git tag, GitHub Release, and attach setup/portable artifacts.
 
 ---
 
-## Checklist Sebelum Distribusi
-
-- [ ] Build di Windows machine (VPS Linux tidak bisa build Windows .exe)
-- [ ] Test semua view (Dashboard, Chat, Settings)
-- [ ] Test API key save/load
-- [ ] Test model switching
-- [ ] Test chat dengan API key valid
-- [ ] Test error handling (API key salah, network error)
-- [ ] Test installer (NSIS) dan portable
-- [ ] Cek SmartScreen warning — inform user cara bypass
-- [ ] Bump version di `package.json` kalau release baru
-- [ ] Git tag: `git tag v1.0.0 && git push origin v1.0.0`
-- [ ] GitHub Release dengan .exe attach
-
----
-
-*Last updated: 2026-05-01*
-*Commits: a78fb92, 561e3f9, 78d455b (3 commits, all pushed to main)*
+Last updated: 2026-05-01
